@@ -1,0 +1,482 @@
+const express = require("express");
+const db = require("./db");
+const app = express();
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const cors = require("cors");
+const multer = require("multer");
+
+app.use(express.json());
+app.use(cors());
+
+
+//GET SINGLE USERS USING TOKEN
+
+app.get("api/user/profile",(request, response)=>{
+    const token = request.headers.authorization;
+    const secretKey = "asdfghjkl";
+
+    jwt.verify(token, secretKey,(error, result)=>{
+        if(error){
+            response.status(400).json({message: "unathorized"});
+        }else{
+            response.status(200).json({result});
+        }
+    });
+});
+
+
+
+//  GET ALL USERS 
+app.get("/api/user", async (request, response) => {
+    const [result] = await db.query("SELECT * FROM users");
+    response.status(200).json(result);
+});
+
+
+//  USER REGISTER 
+app.post("/api/user/register", async (request, response) => {
+    const name = request.body.name;
+    const username = request.body.username;
+    const email = request.body.email;
+    const password = request.body.password;
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    try {
+        const [result] = await db.query(
+            "INSERT INTO users(name, username, email, password) VALUES (?,?,?,?)",
+            [name, username, email, passwordHash]
+        );
+
+        response.status(201).json({
+            id: result.insertId,
+            name: name,
+            username: username,
+            email: email
+        });
+
+    } catch (error) {
+        console.log("Database INSERT error: ", error);
+
+        if (error.errno === 1062) {
+            return response.status(409).json({ message: "This email address is already registered." });
+        }
+
+        return response.status(500).json({ message: "Server internal error. Could not register user." });
+    }
+});
+
+
+//  USER LOGIN 
+app.post("/api/user/login", async (request, response) => {
+    const email = request.body.email;
+    const password = request.body.password;
+    const secretKey = "asdfghjkl";
+
+
+    try {
+        const [result] = await db.query("SELECT * FROM users WHERE email=?", [email]);
+
+        if (result.length === 0) {
+            return response.status(401).json({ message: "Login failed: Invalid email or password." });
+        }
+
+        const user = result[0];
+        const dbPassword = user.password;
+
+        const isPasswordSame = await bcrypt.compare(password, dbPassword);
+
+        if (isPasswordSame) {
+            const token = jwt.sign({ id: user.id }, secretKey, { expiresIn: "1h" });
+
+            response.status(200).json({
+                message: "Login successfully",
+                token: token,
+             
+            });
+        } else {
+            response.status(401).json({ message: "Login failed: Invalid email or password." });
+        }
+
+    } catch (error) {
+        console.log("Login attempt error:", error);
+        return response.status(500).json({ message: "An internal server error occurred during login." });
+    }
+});
+
+
+
+//  PROFILE UPDATE 
+const profileStorage = multer.diskStorage({
+    destination: "./uploads/profile",
+    filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
+});
+const uploadProfile = multer({ storage: profileStorage });
+
+app.post("/api/profile/update", uploadProfile.single("profile"), async (request, response) => {
+    const id = request.body.id;
+    const name = request.body.name;
+    const username = request.body.username;
+    const bio = request.body.bio;
+
+    const profileImg = request.file ? request.file.filename : null;
+
+    await db.query(
+        "UPDATE users SET name=?, username=?, bio=?, profile_image=? WHERE id=?",
+        [name, username, bio, profileImg, id]
+    );
+
+    response.json({ message: "Profile Updated" });
+});
+
+
+
+//  CREATE POST 
+const postStorage = multer.diskStorage({
+    destination: "./uploads/posts",
+    filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
+});
+const uploadPost = multer({ storage: postStorage });
+
+app.post("/api/posts/create", uploadPost.single("post"), async (request, response) => {
+    const user_id = request.body.user_id;
+    const caption = request.body.caption;
+    const img = request.file.filename;
+
+    await db.query(
+        "INSERT INTO posts(user_id, caption, image) VALUES (?,?,?)",
+        [user_id, caption, img]
+    );
+
+    response.json({ message: "Post Created" });
+});
+
+
+
+//  GET ALL POSTS 
+app.get("/api/posts/all", async (request, response) => {
+    const [rows] = await db.query(
+        "SELECT posts.*, users.username, users.profile_image FROM posts JOIN users ON posts.user_id = users.id ORDER BY posts.id DESC"
+    );
+
+    response.json(rows);
+});
+
+
+
+
+//delete post
+
+app.post("/api/posts/delete", async (request, response) => {
+    const post_id = request.body.post_id;
+
+    await db.query("DELETE FROM posts WHERE id=?", [post_id]);
+
+    response.json({ message: "Post Deleted!" });
+});
+
+
+
+
+//get users post 
+
+app.get("/api/posts/user/:user_id", async (request, response) => {
+    const user_id = request.params.user_id;
+
+    const [rows] = await db.query(
+        "SELECT * FROM posts WHERE user_id=? ORDER BY id DESC",
+        [user_id]
+    );
+
+    response.json(rows);
+});
+
+
+
+
+//get single post
+
+app.get("/api/posts/single/:id", async (request, response) => {
+    const post_id = request.params.id;
+
+    const [rows] = await db.query(
+        "SELECT * FROM posts WHERE id=?", 
+        [post_id]
+    );
+
+    response.json(rows[0]);
+});
+
+
+
+
+
+
+//  SAVE POST 
+app.post("/api/posts/save", async (request, response) => {
+    const user_id = request.body.user_id;
+    const post_id = request.body.post_id;
+
+    await db.query(
+        "INSERT INTO saved_posts(user_id, post_id) VALUES(?,?)",
+        [user_id, post_id]
+    );
+
+    response.json({ message: "Post Saved!" });
+});
+
+
+
+//  GET SAVED POSTS 
+app.get("/api/posts/saved/:user_id", async (request, response) => {
+    const user_id = request.params.user_id;
+
+    const [rows] = await db.query(
+        "SELECT posts.* FROM saved_posts JOIN posts ON saved_posts.post_id = posts.id WHERE saved_posts.user_id=?",
+        [user_id]
+    );
+
+    response.json(rows);
+});
+
+
+
+//unsave post
+
+app.post("/api/posts/unsave", async (request, response) => {
+    const user_id = request.body.user_id;
+    const post_id = request.body.post_id;
+
+    await db.query(
+        "DELETE FROM saved_posts WHERE user_id=? AND post_id=?",
+        [user_id, post_id]
+    );
+
+    response.json({ message: "Post Unsaved!" });
+});
+
+
+
+
+
+// add comment
+
+app.post("/api/comment/add", async (request, response) => {
+    const post_id = request.body.post_id;
+    const user_id = request.body.user_id;
+    const comment = request.body.comment;
+
+    await db.query(
+        "INSERT INTO comments(post_id, user_id, comment) VALUES(?,?,?)",
+        [post_id, user_id, comment]
+    );
+
+    response.json({ message: "Comment Added!" });
+});
+
+
+
+
+//get comment by post
+
+app.get("/api/comment/:post_id", async (request, response) => {
+    const post_id = request.params.post_id;
+
+    const [rows] = await db.query(
+        `SELECT comments.*, users.username, users.profile_image 
+         FROM comments 
+         JOIN users ON comments.user_id = users.id 
+         WHERE comments.post_id=? ORDER BY comments.id DESC`,
+        [post_id]
+    );
+
+    response.json(rows);
+});
+
+
+
+//like post
+
+app.post("/api/posts/like", async (request, response) => {
+    const post_id = request.body.post_id;
+    const user_id = request.body.user_id;
+
+    await db.query(
+        "INSERT INTO likes(post_id, user_id) VALUES(?,?)",
+        [post_id, user_id]
+    );
+
+    response.json({ message: "Post Liked!" });
+});
+
+
+//unlike post
+
+app.post("/api/posts/unlike", async (request, response) => {
+    const post_id = request.body.post_id;
+    const user_id = request.body.user_id;
+
+    await db.query(
+        "DELETE FROM likes WHERE post_id=? AND user_id=?",
+        [post_id, user_id]
+    );
+
+    response.json({ message: "Post Unliked!" });
+});
+
+
+
+
+//get like count
+
+app.get("/api/posts/likes/:post_id", async (request, response) => {
+    const post_id = request.params.post_id;
+
+    const [rows] = await db.query(
+        "SELECT COUNT(*) AS likes FROM likes WHERE post_id=?",
+        [post_id]
+    );
+
+    response.json(rows[0]);
+});
+
+
+
+//count share post
+
+app.post("/api/posts/share", async (request, response) => {
+    const post_id = request.body.post_id;
+    const user_id = request.body.user_id;
+
+    await db.query(
+        "INSERT INTO shares(post_id, user_id) VALUES(?,?)",
+        [post_id, user_id]
+    );
+
+    response.json({ message: "Post Shared!" });
+});
+
+
+
+
+//follow user
+
+app.post("/api/user/follow", async (req, res) => {
+  const { follower_id, following_id } = req.body;
+
+  await db.query(
+    "INSERT INTO followers (follower_id, following_id) VALUES (?, ?)",
+    [follower_id, following_id]
+  );
+
+  res.json({ message: "User Followed" });
+});
+
+
+
+
+//unfollow user
+
+app.post("/api/user/unfollow", async (req, res) => {
+  const { follower_id, following_id } = req.body;
+
+  await db.query(
+    "DELETE FROM followers WHERE follower_id=? AND following_id=?",
+    [follower_id, following_id]
+  );
+
+  res.json({ message: "User Unfollowed" });
+});
+
+
+
+
+//get followers list
+
+app.get("/api/user/followers/:user_id", async (req, res) => {
+  const user_id = req.params.user_id;
+
+  const [rows] = await db.query(
+    "SELECT users.* FROM followers JOIN users ON followers.follower_id = users.id WHERE followers.following_id=?",
+    [user_id]
+  );
+
+  res.json(rows);
+});
+
+
+
+
+//get following list
+
+app.get("/api/user/following/:user_id", async (req, res) => {
+  const user_id = req.params.user_id;
+
+  const [rows] = await db.query(
+    "SELECT users.* FROM followers JOIN users ON followers.following_id = users.id WHERE followers.follower_id=?",
+    [user_id]
+  );
+
+  res.json(rows);
+});
+
+
+//********************************CHAT SYSTEM API***********************************//
+
+
+
+//send message
+
+app.post("/api/chat/send", async (req, res) => {
+  const { sender_id, receiver_id, message } = req.body;
+
+  await db.query(
+    "INSERT INTO messages(sender_id, receiver_id, message) VALUES (?,?,?)",
+    [sender_id, receiver_id, message]
+  );
+
+  res.json({ message: "Message Sent" });
+});
+
+
+
+
+//get chat list(latest chat)
+
+app.get("/api/chat/list/:user_id", async (req, res) => {
+  const user_id = req.params.user_id;
+
+  const [rows] = await db.query(
+    "SELECT * FROM messages WHERE sender_id=? OR receiver_id=? ORDER BY created_at DESC",
+    [user_id, user_id]
+  );
+
+  res.json(rows);
+});
+
+
+
+
+//get messages (between two users)
+
+app.get("/api/chat/messages", async (req, res) => {
+  const { sender_id, receiver_id } = req.query;
+
+  const [rows] = await db.query(
+    "SELECT * FROM messages WHERE (sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?) ORDER BY created_at ASC",
+    [sender_id, receiver_id, receiver_id, sender_id]
+  );
+
+  res.json(rows);
+});
+
+
+
+
+
+
+app.listen(4000, (error) => {
+    if (error) console.log("Error " + error);
+    console.log("Server is running on port 4000");
+});
