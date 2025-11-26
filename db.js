@@ -1,10 +1,10 @@
 const mysql = require("mysql2/promise");
 
 const db = mysql.createPool({
-    host: "localhost",
-    user: "root",
-    password: "",   // apna password daalna
-    database: "vibely_db",
+    host: "217.21.87.103",
+    user: "u205680228_deepak_321a",
+    password: "Deepak8595",   // apna password daalna
+    database: "u205680228_vibely",
 });
 
 // Check DB Connection
