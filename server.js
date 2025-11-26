@@ -5,6 +5,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const multer = require("multer");
+const crypto = require("crypto");
 
 app.use(express.json());
 app.use(cors());
@@ -68,46 +69,241 @@ app.post("/api/user/register", async (request, response) => {
 });
 
 
-//  USER LOGIN 
-app.post("/api/user/login", async (request, response) => {
-    const email = request.body.email;
-    const password = request.body.password;
-    const secretKey = "asdfghjkl";
 
+
+
+
+//  USER LOGIN 
+
+app.post("/api/user/login", async (req, res) => {
+    const { email, password } = req.body;
+    const secretKey = "asdfghjkl";
+    const refreshSecret = "refresh_secret_key";
 
     try {
         const [result] = await db.query("SELECT * FROM users WHERE email=?", [email]);
 
         if (result.length === 0) {
-            return response.status(401).json({ message: "Login failed: Invalid email or password." });
+            return res.status(401).json({ message: "Invalid email or password" });
         }
 
         const user = result[0];
-        const dbPassword = user.password;
+        const isPasswordValid = await bcrypt.compare(password, user.password);
 
-        const isPasswordSame = await bcrypt.compare(password, dbPassword);
-
-        if (isPasswordSame) {
-            const token = jwt.sign({ id: user.id }, secretKey, { expiresIn: "1h" });
-
-            response.status(200).json({
-                message: "Login successfully",
-                token: token,
-             
-            });
-        } else {
-            response.status(401).json({ message: "Login failed: Invalid email or password." });
+        if (!isPasswordValid) {
+            return res.status(401).json({ message: "Invalid email or password" });
         }
 
-    } catch (error) {
-        console.log("Login attempt error:", error);
-        return response.status(500).json({ message: "An internal server error occurred during login." });
+        // Access Token (1 hour)
+        const accessToken = jwt.sign(
+            { id: user.id },
+            secretKey,
+            { expiresIn: "1h" }
+        );
+
+        // Refresh Token (30 days)
+        const refreshToken = jwt.sign(
+            { id: user.id },
+            refreshSecret,
+            { expiresIn: "30d" }
+        );
+
+        // Save refresh token in DB
+        await db.query("INSERT INTO refresh_tokens (user_id, token) VALUES (?, ?)", [
+            user.id,
+            refreshToken
+        ]);
+
+        res.json({
+            message: "Login successful",
+            accessToken,
+            refreshToken
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 
 
 
+
+
+
+//refresh token
+
+app.post("/api/token/refresh", async (req, res) => {
+    const { refreshToken } = req.body;
+
+    // Missing token
+    if (!refreshToken) {
+        return res.status(400).json({ message: "Refresh token required" });
+    }
+
+    const refreshSecret = "refresh_secret_key";
+    const secretKey = "asdfghjkl";
+
+    try {
+        // Check refresh token exists in DB
+        const [rows] = await db.query(
+            "SELECT * FROM refresh_tokens WHERE token=?",
+            [refreshToken]
+        );
+
+        if (rows.length === 0) {
+            return res.status(403).json({ message: "Invalid refresh token" });
+        }
+
+        // Verify refresh token
+        jwt.verify(refreshToken, refreshSecret, (err, user) => {
+            if (err) return res.status(403).json({ message: "Expired refresh token" });
+
+            const newAccessToken = jwt.sign(
+                { id: user.id },
+                secretKey,
+                { expiresIn: "1h" }
+            );
+
+            res.json({
+                accessToken: newAccessToken
+            });
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+
+
+
+
+//logout api
+
+app.post("/api/user/logout", async (req, res) => {
+    const { refreshToken } = req.body;
+
+    await db.query("DELETE FROM refresh_tokens WHERE token=?", [refreshToken]);
+
+    res.json({ message: "Logged out successfully" });
+});
+
+
+
+
+
+
+
+
+//send otp api
+
+app.post("/api/auth/send-otp", async (request, response) => {
+    const email = request.body.email;
+
+    try {
+        // Validation
+        if (!email) {
+            return response.status(400).json({
+                message: "Email is required",
+            });
+        }
+
+        // Generate random 6-digit OTP
+        const otp = crypto.randomInt(100000, 999999).toString();
+
+        // Save OTP in DB
+        await db.query(
+            "INSERT INTO password_reset_otps (email, otp) VALUES (?, ?)",
+            [email, otp]
+        );
+
+        // TODO: Send OTP email (optional, if needed)
+        console.log("Generated OTP:", otp);
+
+        // Success Response
+        response.status(200).json({
+            message: "OTP sent successfully",
+            email: email,
+            otp: otp, // show in response for testing — remove in production
+        });
+
+    } catch (error) {
+        console.error("Send OTP Error:", error);
+        response.status(500).json({
+            message: "Internal server error",
+        });
+    }
+});
+
+
+
+
+
+
+// reset password
+
+app.post("/api/auth/reset-password", async (request, response) => {
+    const { email, otp, newPassword } = request.body;
+
+    try {
+
+        // Validation
+        if (!email || !otp || !newPassword) {
+            return response.status(400).json({
+                message: "email, otp & newPassword are required",
+            });
+        }
+
+        // Check OTP
+        const [otpRecord] = await db.query(
+            "SELECT * FROM password_reset_otps WHERE email=? AND otp=? ORDER BY createdAt DESC LIMIT 1",
+            [email, otp]
+        );
+
+        if (otpRecord.length === 0) {
+            return response.status(400).json({
+                message: "Invalid or expired OTP",
+            });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Update user password
+        await db.query(
+            "UPDATE users SET password=? WHERE email=?",
+            [hashedPassword, email]
+        );
+
+        // Delete OTP after use
+        await db.query(
+            "DELETE FROM password_reset_otps WHERE email=?",
+            [email]
+        );
+
+        // Success Response
+        response.status(200).json({
+            message: "Password reset successfully",
+            email: email,
+        });
+
+    } catch (error) {
+        console.error("Reset Password Error:", error);
+        response.status(500).json({
+            message: "Internal server error",
+        });
+    }
+});
+
+
+
+
+
+
 //  PROFILE UPDATE 
+
 const profileStorage = multer.diskStorage({
     destination: "./uploads/profile",
     filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
@@ -168,12 +364,25 @@ app.get("/api/posts/all", async (request, response) => {
 
 //delete post
 
-app.post("/api/posts/delete", async (request, response) => {
-    const post_id = request.body.post_id;
+app.post("/api/posts/delete", async (req, res) => {
+  try {
+    const { post_id } = req.body;
 
+    // Delete related data first:
+    await db.query("DELETE FROM likes WHERE post_id=?", [post_id]);
+    await db.query("DELETE FROM comments WHERE post_id=?", [post_id]);
+    await db.query("DELETE FROM saved_posts WHERE post_id=?", [post_id]);
+    await db.query("DELETE FROM shares WHERE post_id=?", [post_id]);
+
+    // Then delete post
     await db.query("DELETE FROM posts WHERE id=?", [post_id]);
 
-    response.json({ message: "Post Deleted!" });
+    res.json({ message: "Post Deleted!" });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Delete failed", error });
+  }
 });
 
 
