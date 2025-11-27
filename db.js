@@ -1,20 +1,26 @@
 const mysql = require("mysql2/promise");
-
-const db = mysql.createPool({
+const poolConfig = {
     host: "217.21.87.103",
     user: "u205680228_deepak_321a",
-    password: "Deepak8595",   // apna password daalna
+    password: "Deepak8595",
     database: "u205680228_vibely",
-});
+    port: process.env.DB_PORT,
+    waitForConnections: true, // If connections are maxed out, queue new requests
+    connectionLimit: 10,     // Max number of simultaneous connections (adjust as needed)
+    queueLimit: 0,           // No limit on the queue for waiting requests
+    connectTimeout: 20000, 
+    acquireTimeout: 20000 
+};
 
-// Check DB Connection
-(async () => {
-    try {
-        await db.getConnection();
-        console.log("Database Connected");
-    } catch (error) {
-        console.log("Database Connection Error: " + error);
-    }
-})();
+const db = mysql.createPool(poolConfig);
+
+db.getConnection()
+    .then(connection => {
+        console.log("Database connected and pool ready.");
+        connection.release(); // Release the test connection back to the pool
+    })
+    .catch(error => {
+        console.error("Database connection error (Please check config/credentials):", error.message);
+    });
 
 module.exports = db;
