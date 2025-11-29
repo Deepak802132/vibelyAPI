@@ -13,18 +13,58 @@ app.use(cors());
 
 //GET SINGLE USERS USING TOKEN
 
-app.get("api/user/profile",(request, response)=>{
-    const token = request.headers.authorization;
+app.get("/api/user/profile", async (req, res) => {
+    const token = req.headers.authorization;
     const secretKey = "asdfghjkl";
 
-    jwt.verify(token, secretKey,(error, result)=>{
-        if(error){
-            response.status(400).json({message: "unathorized"});
-        }else{
-            response.status(200).json({result});
-        }
-    });
+    if (!token) {
+        return res.status(401).json({ message: "Token required" });
+    }
+
+    try {
+        // Verify Token
+        const decoded = jwt.verify(token, secretKey);
+        const userId = decoded.id;
+
+        // Get Profile info
+        const [[user]] = await db.query(
+            "SELECT id, name, username, email, bio, profile_image FROM users WHERE id=?",
+            [userId]
+        );
+
+        // Followers Count
+        const [[followers]] = await db.query(
+            "SELECT COUNT(*) AS total FROM followers WHERE following_id=?",
+            [userId]
+        );
+
+        // Following Count
+        const [[following]] = await db.query(
+            "SELECT COUNT(*) AS total FROM followers WHERE follower_id=?",
+            [userId]
+        );
+
+        // Posts Count
+        const [[posts]] = await db.query(
+            "SELECT COUNT(*) AS total FROM posts WHERE user_id=?",
+            [userId]
+        );
+
+        return res.json({
+            user,
+            stats: {
+                followers: followers.total,
+                following: following.total,
+                posts: posts.total
+            }
+        });
+
+    } catch (error) {
+        console.log(error);
+        return res.status(401).json({ message: "Invalid or expired token" });
+    }
 });
+
 
 
 
