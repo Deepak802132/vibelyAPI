@@ -28,6 +28,35 @@ app.get("api/user/profile",(request, response)=>{
 
 
 
+
+// SEARCH USERS
+
+app.get("/api/user/search", async (req, res) => {
+    const search = req.query.q;  // frontend se q= keyword aayega
+
+    if (!search) {
+        return res.status(400).json({ message: "Search query required" });
+    }
+
+    try {
+        const [rows] = await db.query(
+            `SELECT id, name, username, email, profile_image 
+             FROM users 
+             WHERE name LIKE ? OR username LIKE ?`,
+            [`%${search}%`, `%${search}%`]
+        );
+
+        res.json(rows);
+
+    } catch (error) {
+        console.log(error);
+        res.status(500).json({ message: "Search failed" });
+    }
+});
+
+
+
+
 //  GET ALL USERS 
 app.get("/api/user", async (request, response) => {
     const [result] = await db.query("SELECT * FROM users");
