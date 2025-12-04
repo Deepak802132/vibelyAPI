@@ -11,6 +11,12 @@ app.use(express.json());
 app.use(cors());
 
 
+
+// ⭐ STATIC FOLDER FOR GLOBAL IMAGE ACCESS
+app.use("/uploads", express.static("uploads"));
+
+
+
 //GET SINGLE USERS USING TOKEN
 
 app.get("/api/user/profile", async (req, res) => {
@@ -398,6 +404,7 @@ app.post("/api/profile/update", uploadProfile.single("profile"), async (request,
 
 
 //  CREATE POST 
+
 const postStorage = multer.diskStorage({
     destination: "./uploads/posts",
     filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
