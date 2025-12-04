@@ -12,8 +12,11 @@ app.use(cors());
 
 
 
-// ⭐ STATIC FOLDER FOR GLOBAL IMAGE ACCESS
-app.use("/uploads", express.static("uploads"));
+
+// ⭐ STATIC PUBLIC FOLDERS
+app.use("/uploads/profile", express.static("uploads/profile"));
+app.use("/uploads/posts", express.static("uploads/posts"));
+
 
 
 
