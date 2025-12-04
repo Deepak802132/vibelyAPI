@@ -41,6 +41,14 @@ app.get("/api/user/profile", async (req, res) => {
             [userId]
         );
 
+        // ⭐ ADD BASE URL
+        const BASE_URL = "https://vibelyapi.onrender.com";
+
+        // ⭐ Convert profile_image filename → Full URL
+        user.profile_image = user.profile_image
+            ? `${BASE_URL}/uploads/profile/${user.profile_image}`
+            : null;
+
         // Followers Count
         const [[followers]] = await db.query(
             "SELECT COUNT(*) AS total FROM followers WHERE following_id=?",
@@ -73,6 +81,7 @@ app.get("/api/user/profile", async (req, res) => {
         return res.status(401).json({ message: "Invalid or expired token" });
     }
 });
+
 
 
 
