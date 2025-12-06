@@ -201,11 +201,18 @@ app.post("/api/user/login", async (req, res) => {
             refreshToken
         ]);
 
-        res.json({
-            message: "Login successful",
-            accessToken,
-            refreshToken
-        });
+       res.json({
+          message: "Login successful",
+          user: {
+             id: user.id,
+             name: user.name,
+             username: user.username,
+             email: user.email
+            },
+         accessToken,
+         refreshToken
+       });
+
 
     } catch (err) {
         console.log(err);
