@@ -485,15 +485,27 @@ app.post("/api/posts/delete", async (req, res) => {
 
 //get users post 
 
-app.get("/api/posts/user/:user_id", async (request, response) => {
-    const user_id = request.params.user_id;
+app.get("/api/posts/user/:user_id", async (req, res) => {
+  try {
+    const user_id = req.params.user_id;
+    const baseUrl = "https://vibelyapi.onrender.com/uploads/posts/";
 
     const [rows] = await db.query(
-        "SELECT * FROM posts WHERE user_id=? ORDER BY id DESC",
-        [user_id]
+      "SELECT * FROM posts WHERE user_id=? ORDER BY id DESC",
+      [user_id]
     );
 
-    response.json(rows);
+    const response = rows.map(post => ({
+      ...post,
+      image: baseUrl + post.image
+    }));
+
+    res.json(response);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json([]);
+  }
 });
 
 
