@@ -185,14 +185,14 @@ app.post("/api/user/login", async (req, res) => {
         const accessToken = jwt.sign(
             { id: user.id },
             secretKey,
-            { expiresIn: "30d" }
+            { expiresIn: "24h" }
         );
 
         // Refresh Token (30 days)
         const refreshToken = jwt.sign(
             { id: user.id },
             refreshSecret,
-            { expiresIn: "365d" }
+            { expiresIn: "30d" }
         );
 
         // Save refresh token in DB
