@@ -181,14 +181,14 @@ app.post("/api/user/login", async (req, res) => {
             return res.status(401).json({ message: "Invalid email or password" });
         }
 
-        // Access Token (1 hour)
+        // Access Token (30 days)
         const accessToken = jwt.sign(
             { id: user.id },
             secretKey,
             { expiresIn: "30d" }
         );
 
-        // Refresh Token (30 days)
+        // Refresh Token (365 days)
         const refreshToken = jwt.sign(
             { id: user.id },
             refreshSecret,
