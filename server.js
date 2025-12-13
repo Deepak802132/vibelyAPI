@@ -614,16 +614,25 @@ app.get("/api/comment/:post_id", async (request, response) => {
 
 //like post
 
-app.post("/api/posts/like", async (request, response) => {
-    const post_id = request.body.post_id;
-    const user_id = request.body.user_id;
+app.post("/api/posts/like", async (req, res) => {
+  const { post_id, user_id } = req.body;
 
-    await db.query(
-        "INSERT INTO likes(post_id, user_id) VALUES(?,?)",
-        [post_id, user_id]
-    );
+  // 🔎 check already liked
+  const [rows] = await db.query(
+    "SELECT id FROM likes WHERE post_id=? AND user_id=?",
+    [post_id, user_id]
+  );
 
-    response.json({ message: "Post Liked!" });
+  if (rows.length > 0) {
+    return res.status(200).json({ message: "Already liked" });
+  }
+
+  await db.query(
+    "INSERT INTO likes(post_id, user_id) VALUES(?,?)",
+    [post_id, user_id]
+  );
+
+  res.json({ message: "Post liked" });
 });
 
 
