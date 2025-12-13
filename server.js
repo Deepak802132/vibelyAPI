@@ -636,6 +636,25 @@ app.post("/api/posts/like", async (req, res) => {
 });
 
 
+
+
+//already liked api get 
+
+app.get("/api/posts/liked/:userId", async (req, res) => {
+  const userId = req.params.userId;
+
+  const [rows] = await db.query(
+    "SELECT post_id FROM likes WHERE user_id=?",
+    [userId]
+  );
+
+  res.json(rows.map(r => r.post_id));
+});
+
+
+
+
+
 //unlike post
 
 app.post("/api/posts/unlike", async (request, response) => {
