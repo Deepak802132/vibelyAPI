@@ -612,6 +612,65 @@ app.get("/api/comment/:post_id", async (request, response) => {
 
 
 
+
+// update comment
+
+app.post("/api/comment/update", async (req, res) => {
+  try {
+    const { comment_id, comment } = req.body;
+
+    if (!comment_id || !comment) {
+      return res.status(400).json({ message: "comment_id & comment are required" });
+    }
+
+    await db.query(
+      "UPDATE comments SET comment=? WHERE id=?",
+      [comment, comment_id]
+    );
+
+    res.json({ message: "Comment Updated!" });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Update failed", error });
+  }
+});
+
+
+
+
+
+// delete comment
+
+app.post("/api/comment/delete", async (req, res) => {
+  try {
+    const { comment_id } = req.body;
+
+    if (!comment_id) {
+      return res.status(400).json({ message: "comment_id required" });
+    }
+
+    await db.query(
+      "DELETE FROM comments WHERE id=?",
+      [comment_id]
+    );
+
+    res.json({ message: "Comment Deleted!" });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Delete failed", error });
+  }
+});
+
+
+
+
+
+
+
+
+
 //like post
 
 app.post("/api/posts/like", async (req, res) => {
