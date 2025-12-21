@@ -746,6 +746,35 @@ app.get("/api/posts/likes/:post_id", async (request, response) => {
 
 
 
+
+
+
+// get comment count by post_id
+
+app.get("/api/posts/comments/count/:post_id", async (req, res) => {
+  try {
+    const post_id = req.params.post_id;
+
+    const [rows] = await db.query(
+      "SELECT COUNT(*) AS comments FROM comments WHERE post_id=?",
+      [post_id]
+    );
+
+    res.json(rows[0]); // { comments: number }
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Failed to get comment count" });
+  }
+});
+
+
+
+
+
+
+
+
 //count share post
 
 app.post("/api/posts/share", async (request, response) => {
