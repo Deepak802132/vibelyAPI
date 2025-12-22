@@ -87,30 +87,69 @@ app.get("/api/user/profile", async (req, res) => {
 
 
 
-// SEARCH USERS
-
+// SEARCH USERS WITH PROFILE STATS
 app.get("/api/user/search", async (req, res) => {
     const search = req.query.q;  // frontend se q= keyword aayega
+    const BASE_URL = "https://vibelyapi.onrender.com";
 
     if (!search) {
         return res.status(400).json({ message: "Search query required" });
     }
 
     try {
-        const [rows] = await db.query(
-            `SELECT id, name, username, email, profile_image 
+        // 🔹 Get matching users
+        const [users] = await db.query(
+            `SELECT id, name, username, profile_image 
              FROM users 
              WHERE name LIKE ? OR username LIKE ?`,
             [`%${search}%`, `%${search}%`]
         );
 
-        res.json(rows);
+        // 🔹 Add stats for each user
+        const usersWithStats = await Promise.all(
+            users.map(async (user) => {
+                // Profile image full URL
+                user.profile_image = user.profile_image
+                    ? `${BASE_URL}/uploads/profile/${user.profile_image}`
+                    : null;
+
+                // Followers count
+                const [[followers]] = await db.query(
+                    "SELECT COUNT(*) AS total FROM followers WHERE following_id=?",
+                    [user.id]
+                );
+
+                // Following count
+                const [[following]] = await db.query(
+                    "SELECT COUNT(*) AS total FROM followers WHERE follower_id=?",
+                    [user.id]
+                );
+
+                // Posts count
+                const [[posts]] = await db.query(
+                    "SELECT COUNT(*) AS total FROM posts WHERE user_id=?",
+                    [user.id]
+                );
+
+                return {
+                    ...user,
+                    stats: {
+                        followers: followers.total,
+                        following: following.total,
+                        posts: posts.total
+                    }
+                };
+            })
+        );
+
+        res.json(usersWithStats);
 
     } catch (error) {
         console.log(error);
         res.status(500).json({ message: "Search failed" });
     }
 });
+
 
 
 
