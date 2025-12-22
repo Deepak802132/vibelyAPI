@@ -88,6 +88,8 @@ app.get("/api/user/profile", async (req, res) => {
 
 
 // SEARCH USERS WITH PROFILE STATS
+
+
 app.get("/api/user/search", async (req, res) => {
     const search = req.query.q;  // frontend se q= keyword aayega
     const BASE_URL = "https://vibelyapi.onrender.com";
@@ -99,13 +101,13 @@ app.get("/api/user/search", async (req, res) => {
     try {
         // 🔹 Get matching users
         const [users] = await db.query(
-            `SELECT id, name, username, profile_image 
+            `SELECT id, name, username, bio, profile_image 
              FROM users 
              WHERE name LIKE ? OR username LIKE ?`,
             [`%${search}%`, `%${search}%`]
         );
 
-        // 🔹 Add stats for each user
+        // 🔹 Add stats + posts for each user
         const usersWithStats = await Promise.all(
             users.map(async (user) => {
                 // Profile image full URL
@@ -126,18 +128,30 @@ app.get("/api/user/search", async (req, res) => {
                 );
 
                 // Posts count
-                const [[posts]] = await db.query(
+                const [[postsCount]] = await db.query(
                     "SELECT COUNT(*) AS total FROM posts WHERE user_id=?",
                     [user.id]
                 );
+
+                // 🔹 Get posts with full image URL
+                const [posts] = await db.query(
+                    "SELECT id, caption, image FROM posts WHERE user_id=? ORDER BY id DESC",
+                    [user.id]
+                );
+
+                const postsWithURL = posts.map(post => ({
+                    ...post,
+                    image: post.image ? `${BASE_URL}/uploads/posts/${post.image}` : null
+                }));
 
                 return {
                     ...user,
                     stats: {
                         followers: followers.total,
                         following: following.total,
-                        posts: posts.total
-                    }
+                        posts: postsCount.total
+                    },
+                    posts: postsWithURL
                 };
             })
         );
@@ -149,6 +163,7 @@ app.get("/api/user/search", async (req, res) => {
         res.status(500).json({ message: "Search failed" });
     }
 });
+
 
 
 
