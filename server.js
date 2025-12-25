@@ -6,6 +6,8 @@ const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const multer = require("multer");
 const crypto = require("crypto");
+require("dotenv").config();
+
 
 app.use(express.json());
 app.use(cors());
@@ -960,9 +962,9 @@ app.get("/api/chat/messages", async (req, res) => {
 
 
 
+const PORT = process.env.PORT || 3001;
 
-
-app.listen(3001, (error) => {
+app.listen(PORT, (error) => {
     if (error) console.log("Error " + error);
-    console.log("Server is running on port 3001");
+    console.log("Server is running on port Vibely API running on port:"+PORT);
 });
