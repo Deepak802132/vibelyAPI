@@ -962,7 +962,7 @@ app.get("/api/chat/messages", async (req, res) => {
 
 
 
-app.listen(4000, (error) => {
+app.listen(3001, (error) => {
     if (error) console.log("Error " + error);
     console.log("Server is running on port 4000");
 });
