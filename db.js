@@ -1,9 +1,10 @@
+require("dotenv").config();
 const mysql = require("mysql2/promise");
 const poolConfig = {
-    host: "217.21.87.103",
-    user: "u205680228_deepak_321a",
-    password: "Deepak8595",
-    database: "u205680228_vibely",
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
     port: process.env.DB_PORT,
     waitForConnections: true, // If connections are maxed out, queue new requests
     connectionLimit: 10,     // Max number of simultaneous connections (adjust as needed)
