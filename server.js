@@ -44,7 +44,7 @@ app.get("/api/user/profile", async (req, res) => {
         );
 
         // ⭐ ADD BASE URL
-        const BASE_URL = "https://vibelyapi.onrender.com";
+        const BASE_URL = "https://vibe.edugaondev.com";
 
         // ⭐ Convert profile_image filename → Full URL
         user.profile_image = user.profile_image
@@ -94,7 +94,7 @@ app.get("/api/user/profile", async (req, res) => {
 
 app.get("/api/user/search", async (req, res) => {
     const search = req.query.q;  // frontend se q= keyword aayega
-    const BASE_URL = "https://vibelyapi.onrender.com";
+    const BASE_URL = "https://vibe.edugaondev.com";
 
     if (!search) {
         return res.status(400).json({ message: "Search query required" });
@@ -544,7 +544,7 @@ app.post("/api/posts/delete", async (req, res) => {
 app.get("/api/posts/user/:user_id", async (req, res) => {
   try {
     const user_id = req.params.user_id;
-    const baseUrl = "https://vibelyapi.onrender.com/uploads/posts/";
+    const baseUrl = "https://vibe.edugaondev.com/uploads/posts/";
 
     const [rows] = await db.query(
       "SELECT * FROM posts WHERE user_id=? ORDER BY id DESC",
