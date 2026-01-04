@@ -21,6 +21,25 @@ app.use("/uploads/posts", express.static("uploads/posts"));
 
 
 
+// REALTIME CHAT
+const http = require("http");
+const { Server } = require("socket.io");
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+const onlineUsers = new Map();
+
+
+
+
+
 
 //GET SINGLE USERS USING TOKEN
 
@@ -46,10 +65,8 @@ app.get("/api/user/profile", async (req, res) => {
         // ⭐ ADD BASE URL
         const BASE_URL = "https://vibe.edugaondev.com";
 
-        // ⭐ Convert profile_image filename → Full URL
-        user.profile_image = user.profile_image
-            ? `${BASE_URL}/uploads/profile/${user.profile_image}`
-            : null;
+       
+        user.profile_image = user.profile_image || null;
 
         // Followers Count
         const [[followers]] = await db.query(
@@ -113,9 +130,7 @@ app.get("/api/user/search", async (req, res) => {
         const usersWithStats = await Promise.all(
             users.map(async (user) => {
                 // Profile image full URL
-                user.profile_image = user.profile_image
-                    ? `${BASE_URL}/uploads/profile/${user.profile_image}`
-                    : null;
+                user.profile_image = user.profile_image || null;
 
                 // Followers count
                 const [[followers]] = await db.query(
@@ -142,9 +157,9 @@ app.get("/api/user/search", async (req, res) => {
                 );
 
                 const postsWithURL = posts.map(post => ({
-                    ...post,
-                    image: post.image ? `${BASE_URL}/uploads/posts/${post.image}` : null
-                }));
+                   ...post,
+                   image: post.image || null
+                 }));
 
                 return {
                     ...user,
@@ -544,7 +559,7 @@ app.post("/api/posts/delete", async (req, res) => {
 app.get("/api/posts/user/:user_id", async (req, res) => {
   try {
     const user_id = req.params.user_id;
-    const baseUrl = "https://vibe.edugaondev.com/uploads/posts/";
+
 
     const [rows] = await db.query(
       "SELECT * FROM posts WHERE user_id=? ORDER BY id DESC",
@@ -552,8 +567,8 @@ app.get("/api/posts/user/:user_id", async (req, res) => {
     );
 
     const response = rows.map(post => ({
-      ...post,
-      image: baseUrl + post.image
+     ...post,
+     image: post.image || null
     }));
 
     res.json(response);
@@ -930,15 +945,23 @@ app.post("/api/chat/send", async (req, res) => {
 
 
 
-//get chat list(latest chat)
-
+// Chat list (latest message first) with sender info
 app.get("/api/chat/list/:user_id", async (req, res) => {
   const user_id = req.params.user_id;
 
   const [rows] = await db.query(
-    "SELECT * FROM messages WHERE sender_id=? OR receiver_id=? ORDER BY created_at DESC",
+    `SELECT m.*, u.username, u.profile_image
+     FROM messages m
+     JOIN users u ON u.id = m.sender_id
+     WHERE m.sender_id=? OR m.receiver_id=?
+     ORDER BY m.created_at DESC`,
     [user_id, user_id]
   );
+
+  // Convert profile image to full URL
+  rows.forEach(r => {
+  r.profile_image = r.profile_image || null;
+  });
 
   res.json(rows);
 });
@@ -946,25 +969,110 @@ app.get("/api/chat/list/:user_id", async (req, res) => {
 
 
 
-//get messages (between two users)
 
+
+
+// Get messages between two users
 app.get("/api/chat/messages", async (req, res) => {
   const { sender_id, receiver_id } = req.query;
 
   const [rows] = await db.query(
-    "SELECT * FROM messages WHERE (sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?) ORDER BY created_at ASC",
+    `SELECT m.*, u.username, u.profile_image
+     FROM messages m
+     JOIN users u ON u.id = m.sender_id
+     WHERE (m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?)
+     ORDER BY m.created_at ASC`,
     [sender_id, receiver_id, receiver_id, sender_id]
   );
 
+  rows.forEach(r => {
+   r.profile_image = r.profile_image || null;
+  });
+
   res.json(rows);
 });
+
+
+
+
+
+//   SOCKET CONNECTION
+io.on("connection", (socket) => {
+  console.log("⚡ Socket connected:", socket.id);
+
+  // user comes online
+  socket.on("addUser", (userId) => {
+    onlineUsers.set(userId, socket.id);
+    console.log("🟢 Online users:", onlineUsers);
+  });
+
+  // 🔥 Realtime send message
+  socket.on("sendMessage", async (data) => {
+    const { sender_id, receiver_id, message } = data;
+
+
+    // Save message in DB
+    const [result] = await db.query(
+      "INSERT INTO messages(sender_id, receiver_id, message) VALUES (?,?,?)",
+      [sender_id, receiver_id, message]
+    );
+
+    // Get sender info
+    const [sender] = await db.query(
+      "SELECT username, profile_image FROM users WHERE id=?",
+      [sender_id]
+    );
+
+    const messageData = {
+      id: result.insertId,
+      sender_id,
+      receiver_id,
+      message,
+      created_at: new Date(),
+     sender: {
+       username: sender[0].username,
+       profile_image: sender[0].profile_image || null
+     }
+    };
+
+    // Send to receiver if online
+    const receiverSocket = onlineUsers.get(receiver_id);
+    if (receiverSocket) {
+      io.to(receiverSocket).emit("receiveMessage", messageData);
+    }
+
+    // Send back confirmation to sender
+    socket.emit("messageSent", messageData);
+  });
+
+  // Typing indicator
+  socket.on("typing", ({ sender_id, receiver_id }) => {
+    const receiverSocket = onlineUsers.get(receiver_id);
+    if (receiverSocket) {
+      io.to(receiverSocket).emit("typing", { sender_id });
+    }
+  });
+
+  // User disconnect
+  socket.on("disconnect", () => {
+    for (let [userId, socketId] of onlineUsers.entries()) {
+      if (socketId === socket.id) {
+        onlineUsers.delete(userId);
+        break;
+      }
+    }
+    console.log("❌ User disconnected");
+  });
+});
+
+
+
 
 
 
 
 const PORT = process.env.PORT || 3001;
 
-app.listen(PORT, '0.0.0.0', (error) => {
-    if (error) console.log("Error " + error);
-    console.log("Server is running on port Vibely API running on port:"+PORT);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log("🚀 Vibely API + Socket running on port:", PORT);
 });
