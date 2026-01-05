@@ -44,8 +44,7 @@ app.get("/api/user/profile", async (req, res) => {
             [userId]
         );
 
-        // ⭐ ADD BASE URL
-        const BASE_URL = "https://vibe.edugaondev.com";
+      
 
        
         user.profile_image = user.profile_image || null;
