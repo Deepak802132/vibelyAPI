@@ -21,24 +21,6 @@ app.use("/uploads/posts", express.static("uploads/posts"));
 
 
 
-// REALTIME CHAT
-const http = require("http");
-const { Server } = require("socket.io");
-
-const server = http.createServer(app);
-
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
-
-const onlineUsers = new Map();
-
-
-
-
 
 
 //GET SINGLE USERS USING TOKEN
@@ -649,18 +631,30 @@ app.post("/api/posts/unsave", async (request, response) => {
 
 // add comment
 
-app.post("/api/comment/add", async (request, response) => {
-    const post_id = request.body.post_id;
-    const user_id = request.body.user_id;
-    const comment = request.body.comment;
+app.post("/api/comment/add", async (req, res) => {
+  const { post_id, user_id, comment } = req.body;
 
-    await db.query(
-        "INSERT INTO comments(post_id, user_id, comment) VALUES(?,?,?)",
-        [post_id, user_id, comment]
-    );
+  await db.query(
+    "INSERT INTO comments(post_id, user_id, comment) VALUES(?,?,?)",
+    [post_id, user_id, comment]
+  );
 
-    response.json({ message: "Comment Added!" });
+  const [[post]] = await db.query(
+    "SELECT user_id FROM posts WHERE id=?",
+    [post_id]
+  );
+
+  await createNotification({
+    sender_id: user_id,
+    receiver_id: post.user_id,
+    type: "comment",
+    post_id,
+    message: "commented on your post"
+  });
+
+  res.json({ message: "Comment Added!" });
 });
+
 
 
 
@@ -747,14 +741,18 @@ app.post("/api/comment/delete", async (req, res) => {
 app.post("/api/posts/like", async (req, res) => {
   const { post_id, user_id } = req.body;
 
-  // 🔎 check already liked
+  const [[post]] = await db.query(
+    "SELECT user_id FROM posts WHERE id=?",
+    [post_id]
+  );
+
   const [rows] = await db.query(
     "SELECT id FROM likes WHERE post_id=? AND user_id=?",
     [post_id, user_id]
   );
 
   if (rows.length > 0) {
-    return res.status(200).json({ message: "Already liked" });
+    return res.json({ message: "Already liked" });
   }
 
   await db.query(
@@ -762,8 +760,17 @@ app.post("/api/posts/like", async (req, res) => {
     [post_id, user_id]
   );
 
+  await createNotification({
+    sender_id: user_id,
+    receiver_id: post.user_id,
+    type: "like",
+    post_id,
+    message: "liked your post"
+  });
+
   res.json({ message: "Post liked" });
 });
+
 
 
 
@@ -873,8 +880,16 @@ app.post("/api/user/follow", async (req, res) => {
     [follower_id, following_id]
   );
 
+  await createNotification({
+    sender_id: follower_id,
+    receiver_id: following_id,
+    type: "follow",
+    message: "started following you"
+  });
+
   res.json({ message: "User Followed" });
 });
+
 
 
 
@@ -927,10 +942,7 @@ app.get("/api/user/following/:user_id", async (req, res) => {
 
 //********************************CHAT SYSTEM API***********************************//
 
-
-
-//send message
-
+// Send message
 app.post("/api/chat/send", async (req, res) => {
   const { sender_id, receiver_id, message } = req.body;
 
@@ -939,8 +951,18 @@ app.post("/api/chat/send", async (req, res) => {
     [sender_id, receiver_id, message]
   );
 
+  await createNotification({
+    sender_id,
+    receiver_id,
+    type: "message",
+    message: "sent you a message"
+  });
+
   res.json({ message: "Message Sent" });
 });
+
+
+
 
 
 
@@ -949,24 +971,27 @@ app.post("/api/chat/send", async (req, res) => {
 app.get("/api/chat/list/:user_id", async (req, res) => {
   const user_id = req.params.user_id;
 
-  const [rows] = await db.query(
-    `SELECT m.*, u.username, u.profile_image
-     FROM messages m
-     JOIN users u ON u.id = m.sender_id
-     WHERE m.sender_id=? OR m.receiver_id=?
-     ORDER BY m.created_at DESC`,
-    [user_id, user_id]
-  );
+  try {
+    const [rows] = await db.query(
+      `SELECT m.*, u.username, u.profile_image
+       FROM messages m
+       JOIN users u ON u.id = m.sender_id
+       WHERE m.sender_id=? OR m.receiver_id=?
+       ORDER BY m.created_at DESC`,
+      [user_id, user_id]
+    );
 
-  // Convert profile image to full URL
-  rows.forEach(r => {
-  r.profile_image = r.profile_image || null;
-  });
+    // Ensure profile_image is not null
+    rows.forEach(r => {
+      r.profile_image = r.profile_image || null;
+    });
 
-  res.json(rows);
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to load chat list" });
+  }
 });
-
-
 
 
 
@@ -976,17 +1001,65 @@ app.get("/api/chat/list/:user_id", async (req, res) => {
 app.get("/api/chat/messages", async (req, res) => {
   const { sender_id, receiver_id } = req.query;
 
+  try {
+    const [rows] = await db.query(
+      `SELECT m.*, u.username, u.profile_image
+       FROM messages m
+       JOIN users u ON u.id = m.sender_id
+       WHERE (m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?)
+       ORDER BY m.created_at ASC`,
+      [sender_id, receiver_id, receiver_id, sender_id]
+    );
+
+    rows.forEach(r => {
+      r.profile_image = r.profile_image || null;
+    });
+
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to load messages" });
+  }
+});
+
+
+//    NOTIFICATION FUNCTION
+const createNotification = async ({
+  sender_id,
+  receiver_id,
+  type,
+  post_id = null,
+  message
+}) => {
+  if (sender_id === receiver_id) return;
+
+  await db.query(
+    `INSERT INTO notifications 
+     (sender_id, receiver_id, type, post_id, message)
+     VALUES (?,?,?,?,?)`,
+    [sender_id, receiver_id, type, post_id, message]
+  );
+};
+
+
+
+
+//  GET NOTIFICATION
+
+app.get("/api/notifications/:user_id", async (req, res) => {
+  const user_id = req.params.user_id;
+
   const [rows] = await db.query(
-    `SELECT m.*, u.username, u.profile_image
-     FROM messages m
-     JOIN users u ON u.id = m.sender_id
-     WHERE (m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?)
-     ORDER BY m.created_at ASC`,
-    [sender_id, receiver_id, receiver_id, sender_id]
+    `SELECT n.*, u.username, u.profile_image
+     FROM notifications n
+     JOIN users u ON u.id = n.sender_id
+     WHERE n.receiver_id=?
+     ORDER BY n.created_at DESC`,
+    [user_id]
   );
 
-  rows.forEach(r => {
-   r.profile_image = r.profile_image || null;
+  rows.forEach(n => {
+    n.profile_image = n.profile_image || null;
   });
 
   res.json(rows);
@@ -995,75 +1068,36 @@ app.get("/api/chat/messages", async (req, res) => {
 
 
 
+// READ NOTIFICATION
 
-//   SOCKET CONNECTION
-io.on("connection", (socket) => {
-  console.log("⚡ Socket connected:", socket.id);
+app.post("/api/notifications/read", async (req, res) => {
+  const { notification_id } = req.body;
 
-  // user comes online
-  socket.on("addUser", (userId) => {
-    onlineUsers.set(userId, socket.id);
-    console.log("🟢 Online users:", onlineUsers);
-  });
+  await db.query(
+    "UPDATE notifications SET is_read=1 WHERE id=?",
+    [notification_id]
+  );
 
-  // 🔥 Realtime send message
-  socket.on("sendMessage", async (data) => {
-    const { sender_id, receiver_id, message } = data;
-
-
-    // Save message in DB
-    const [result] = await db.query(
-      "INSERT INTO messages(sender_id, receiver_id, message) VALUES (?,?,?)",
-      [sender_id, receiver_id, message]
-    );
-
-    // Get sender info
-    const [sender] = await db.query(
-      "SELECT username, profile_image FROM users WHERE id=?",
-      [sender_id]
-    );
-
-    const messageData = {
-      id: result.insertId,
-      sender_id,
-      receiver_id,
-      message,
-      created_at: new Date(),
-     sender: {
-       username: sender[0].username,
-       profile_image: sender[0].profile_image || null
-     }
-    };
-
-    // Send to receiver if online
-    const receiverSocket = onlineUsers.get(receiver_id);
-    if (receiverSocket) {
-      io.to(receiverSocket).emit("receiveMessage", messageData);
-    }
-
-    // Send back confirmation to sender
-    socket.emit("messageSent", messageData);
-  });
-
-  // Typing indicator
-  socket.on("typing", ({ sender_id, receiver_id }) => {
-    const receiverSocket = onlineUsers.get(receiver_id);
-    if (receiverSocket) {
-      io.to(receiverSocket).emit("typing", { sender_id });
-    }
-  });
-
-  // User disconnect
-  socket.on("disconnect", () => {
-    for (let [userId, socketId] of onlineUsers.entries()) {
-      if (socketId === socket.id) {
-        onlineUsers.delete(userId);
-        break;
-      }
-    }
-    console.log("❌ User disconnected");
-  });
+  res.json({ message: "Notification marked as read" });
 });
+
+
+//   UNREAD NOTIFICATION
+
+app.get("/api/notifications/unread/:user_id", async (req, res) => {
+  const user_id = req.params.user_id;
+
+  const [[count]] = await db.query(
+    "SELECT COUNT(*) AS total FROM notifications WHERE receiver_id=? AND is_read=0",
+    [user_id]
+  );
+
+  res.json(count);
+});
+
+
+
+
 
 
 
@@ -1073,6 +1107,6 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 3001;
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log("🚀 Vibely API + Socket running on port:", PORT);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log("🚀 Vibely API running on port:", PORT);
 });
