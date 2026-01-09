@@ -968,29 +968,63 @@ app.post("/api/chat/send", async (req, res) => {
 
 // Chat list (latest message first) with sender info
 app.get("/api/chat/list/:user_id", async (req, res) => {
-  const user_id = req.params.user_id;
+  const userId = req.params.user_id;
 
   try {
     const [rows] = await db.query(
-      `SELECT m.*, u.username, u.profile_image
-       FROM messages m
-       JOIN users u ON u.id = m.sender_id
-       WHERE m.sender_id=? OR m.receiver_id=?
-       ORDER BY m.created_at DESC`,
-      [user_id, user_id]
+      `
+      SELECT 
+        m.id,
+        m.sender_id,
+        m.receiver_id,
+        m.message,
+        m.created_at,
+
+        sender.id AS sender_id_user,
+        sender.username AS sender_username,
+        sender.profile_image AS sender_image,
+
+        receiver.id AS receiver_id_user,
+        receiver.username AS receiver_username,
+        receiver.profile_image AS receiver_image
+
+      FROM messages m
+      JOIN users sender ON sender.id = m.sender_id
+      JOIN users receiver ON receiver.id = m.receiver_id
+      WHERE m.sender_id = ? OR m.receiver_id = ?
+      ORDER BY m.created_at DESC
+      `,
+      [userId, userId]
     );
 
-    // Ensure profile_image is not null
-    rows.forEach(r => {
-      r.profile_image = r.profile_image || null;
-    });
+    // 🔥 Format response cleanly
+    const formatted = rows.map(r => ({
+      id: r.id,
+      sender_id: r.sender_id,
+      receiver_id: r.receiver_id,
+      message: r.message,
+      created_at: r.created_at,
 
-    res.json(rows);
-  } catch (error) {
-    console.error(error);
+      sender: {
+        id: r.sender_id_user,
+        username: r.sender_username,
+        profile_image: r.sender_image
+      },
+
+      receiver: {
+        id: r.receiver_id_user,
+        username: r.receiver_username,
+        profile_image: r.receiver_image
+      }
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Failed to load chat list" });
   }
 });
+
 
 
 
@@ -1002,24 +1036,56 @@ app.get("/api/chat/messages", async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      `SELECT m.*, u.username, u.profile_image
-       FROM messages m
-       JOIN users u ON u.id = m.sender_id
-       WHERE (m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?)
-       ORDER BY m.created_at ASC`,
+      `
+      SELECT 
+        m.id,
+        m.sender_id,
+        m.receiver_id,
+        m.message,
+        m.created_at,
+
+        sender.username AS sender_username,
+        sender.profile_image AS sender_image,
+
+        receiver.username AS receiver_username,
+        receiver.profile_image AS receiver_image
+
+      FROM messages m
+      JOIN users sender ON sender.id = m.sender_id
+      JOIN users receiver ON receiver.id = m.receiver_id
+      WHERE 
+        (m.sender_id = ? AND m.receiver_id = ?) OR
+        (m.sender_id = ? AND m.receiver_id = ?)
+      ORDER BY m.created_at ASC
+      `,
       [sender_id, receiver_id, receiver_id, sender_id]
     );
 
-    rows.forEach(r => {
-      r.profile_image = r.profile_image || null;
-    });
+    const formatted = rows.map(r => ({
+      id: r.id,
+      sender_id: r.sender_id,
+      receiver_id: r.receiver_id,
+      message: r.message,
+      created_at: r.created_at,
 
-    res.json(rows);
-  } catch (error) {
-    console.error(error);
+      sender: {
+        username: r.sender_username,
+        profile_image: r.sender_image
+      },
+
+      receiver: {
+        username: r.receiver_username,
+        profile_image: r.receiver_image
+      }
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Failed to load messages" });
   }
 });
+
 
 
 //    NOTIFICATION FUNCTION
