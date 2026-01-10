@@ -9,7 +9,8 @@ const crypto = require("crypto");
 require("dotenv").config();
 
 
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(cors());
 
 
@@ -92,7 +93,6 @@ app.get("/api/user/profile", async (req, res) => {
 
 app.get("/api/user/search", async (req, res) => {
     const search = req.query.q;  // frontend se q= keyword aayega
-    const BASE_URL = "https://vibe.edugaondev.com";
 
     if (!search) {
         return res.status(400).json({ message: "Search query required" });
@@ -454,7 +454,14 @@ const profileStorage = multer.diskStorage({
     destination: "./uploads/profile",
     filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
-const uploadProfile = multer({ storage: profileStorage });
+
+const uploadProfile = multer({
+  storage: profileStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10 MB
+  }
+});
+
 
 app.post("/api/profile/update", uploadProfile.single("profile"), async (request, response) => {
     const id = request.body.id;
@@ -480,7 +487,14 @@ const postStorage = multer.diskStorage({
     destination: "./uploads/posts",
     filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname),
 });
-const uploadPost = multer({ storage: postStorage });
+
+const uploadPost = multer({
+  storage: postStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10 MB
+  }
+});
+
 
 app.post("/api/posts/create", uploadPost.single("post"), async (request, response) => {
     const user_id = request.body.user_id;
