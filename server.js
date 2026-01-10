@@ -1101,6 +1101,76 @@ app.get("/api/chat/messages", async (req, res) => {
 });
 
 
+//   Single chat delete
+
+app.post("/api/chat/delete-message", async (req, res) => {
+  try {
+    const { message_id, user_id } = req.body;
+
+    if (!message_id || !user_id) {
+      return res.status(400).json({ message: "message_id & user_id required" });
+    }
+
+    // ✅ Security: sirf sender hi apna message delete kar sakta hai
+    const [rows] = await db.query(
+      "SELECT sender_id FROM messages WHERE id=?",
+      [message_id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: "Message not found" });
+    }
+
+    if (rows[0].sender_id !== user_id) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+
+    await db.query(
+      "DELETE FROM messages WHERE id=?",
+      [message_id]
+    );
+
+    res.json({ message: "Message deleted" });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Delete failed" });
+  }
+});
+
+
+// All chat delete
+
+app.post("/api/chat/delete", async (req, res) => {
+  try {
+    const { user_id, other_user_id } = req.body;
+
+    if (!user_id || !other_user_id) {
+      return res.status(400).json({ message: "user_id & other_user_id required" });
+    }
+
+    await db.query(
+      `
+      DELETE FROM messages 
+      WHERE 
+        (sender_id=? AND receiver_id=?) 
+        OR 
+        (sender_id=? AND receiver_id=?)
+      `,
+      [user_id, other_user_id, other_user_id, user_id]
+    );
+
+    res.json({ message: "Chat deleted successfully" });
+
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Failed to delete chat" });
+  }
+});
+
+
+
+
 
 //    NOTIFICATION FUNCTION
 const createNotification = async ({
